@@ -1,0 +1,69 @@
+Malloc Library Design:
+
+Renamed the malloc libary functions to malloc1, realloc1, calloc1, free1
+Reason: Found illogical behavior, when renamed to malloc, realloc, calloc, free
+Notes while dubugging with malloc instead of malloc1
+ - the calls are redirected to custom library calls, but with different parameters than intended
+
+Bins: 
+I have maintained separate bins for different allocation size of 8-bytes, 16-bytes, 64-bytes,512-bytes, Everything else (>512 bytes).
+
+typedef double Align;
+union header {
+  struct {
+    union header *ptr;
+    //union header *prev;  //to make it doubly linkedlist
+    size_t size; 
+  } s;
+  Align x;
+};
+typedef union header Header;
+
+The Header is of size 16 bytes. It includes pointer to the next free block.
+size -> it stores in the number of bytes allocated
+
+static __thread  Header base[5];
+static __thread  Header *freep[5];
+
+The freep and base array stores the pointer for free list for each bin size.
+
+If no blocks are availabe on the free-list, for all the memory allocation requests of size <512 is acquired by calling sbrk() system call and for memory allocation requests of size >512 mmap() system call is used. 
+When sbrk system call is called, memory requested is in the multiple of PAGE_SIZE and sizeof(Header) 
+
+When the free is called the returned chunk of memory is added to the free list based on the size of the return chunk.
+
+
+-------------------------------------------------------------------------------------------------------
+
+Thread Safety
+
+The linkedlist of memory stats is shared among the threads as it is not part of the Thread Local Storage. I have put mutex locks surrounding the code that manipulates the linked list.
+
+Also, since sbrk() system call is not threadsafe and hence the sbrk() call is surrounded by mutex locks
+
+
+-------------------------------------------------------------------------------------------------------
+Support for fork
+
+If a thread calls fork() to create a child process, tried running a process with one thread calling fork() while other is calling malloc() continuously, it works in an indeterminsitic manner. The program ends sometimes, but fails to terminate in certain runs.
+
+Support for fork safe is enabled by using pthread_atfork() function called as part of the constructor of malloc library
+
+-------------------------------------------------------------------------------------------------------
+
+Print Malloc Statistics
+
+The following statistics for each arena when the program calls malloc_stats1() is displayed: 
+
+Total size of arena allocated with sbrk/mmap
+Total number of bins
+For each bin:-----
+Total number of blocks
+Used blocks
+Free blocks
+Total allocation requests
+Total free requests
+
+
+
+
